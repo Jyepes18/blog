@@ -1,0 +1,19 @@
+body, .card{
+    background-color: #f5f5dc;
+}
+
+.img {
+    max-width: 90px;    
+    max-height: 80px;   
+    width: auto;        
+    height: auto;       
+    object-fit: contain;
+}
+
+.img-card{
+    max-width: 50px;
+    max-height: 40px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}

@@ -1,0 +1,20 @@
+body{
+    background-color: #f5f5dc;
+}
+
+.img-perfil {
+    max-width: 500px;      
+    width: 100%;          
+    height: auto;         
+    object-fit: contain;   
+}
+
+.a-no-decoration{
+    text-decoration: none;
+    color: #000;
+}
+
+.a-no-decoration:hover{
+    color: #737a7c;
+}
+

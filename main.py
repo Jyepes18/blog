@@ -1,12 +1,20 @@
 from pymongo import MongoClient
-from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from passlib.hash import pbkdf2_sha256
-from fastapi import UploadFile, File
 from pathlib import Path
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
+from typing import Union
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+TOKEN_SECONDS_EXPIRATE = int(os.getenv("TOKEN_SECONDS_EXPIRATE"))
 
 app = FastAPI()
 
@@ -24,7 +32,7 @@ print(client.list_database_names())
 ## Termina la conexion
 
 @app.get("/", response_class=HTMLResponse)
-async def login(request: Request):
+async def get_login(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.get("/register", response_class=HTMLResponse)
@@ -32,90 +40,106 @@ async def register(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 
-@app.post("/submit", response_class=HTMLResponse)
-async def send_dates(request: Request, name: str = Form(...), email: str = Form(...), password_one: str = Form(...), password_two: str = Form(...), 
+@app.post("/submit_register", response_class=HTMLResponse)
+async def send_dates(request: Request, name: str = Form(...), email: str = Form(...), password: str = Form(...), 
                      img: UploadFile = File(...)):
     
     coleccion = db['usuarios']
-
-    if password_one == password_two:
         
-        img_path = Path("static/images")
-        img_path.mkdir(parents=True, exist_ok=True) 
+    img_path = Path("static/images")
+    img_path.mkdir(parents=True, exist_ok=True) 
 
-        img_filename = img.filename
-        img_file_path = img_path / img_filename
-        with open(img_file_path, "wb") as buffer:
-            buffer.write(await img.read())
+    img_filename = img.filename
+    img_file_path = img_path / img_filename
+    with open(img_file_path, "wb") as buffer:
+        buffer.write(await img.read())
 
-        hashed_password = pbkdf2_sha256.hash(password_two)
+    hashed_password = pbkdf2_sha256.hash(password)
 
-        usuario = {
-            "name": name,
-            "email": email,
-            "password": hashed_password,
-            "img_filename": img_filename  
+    usuario = {
+        "name": name,
+        "email": email,
+        "password": hashed_password,
+        "img_filename": img_filename  
+    }
+
+    response = coleccion.insert_one(usuario)
+
+    return templates.TemplateResponse("succes.html", {"request": request})
+
+# Star to login auhtenticate
+
+def get_user(email: str, usuarios_collection):
+    user_data = usuarios_collection.find_one({"email": email})
+    return user_data
+
+
+def authenticate(password_hash: str, password_plain: str):
+    is_valid = pbkdf2_sha256.verify(password_plain, password_hash)
+    return is_valid
+
+
+def create_token(data: dict):
+    data_token = data.copy()
+    data_token["exp"] = datetime.utcnow() + timedelta(seconds=TOKEN_SECONDS_EXPIRATE)
+    token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
+    return token_jwt
+
+@app.post("/users/login", response_class=HTMLResponse)
+async def login(request: Request, email: str = Form(...), password: str = Form(...)):
+    usuarios_collection = db['usuarios']
+
+    user_data = get_user(email, usuarios_collection)
+    if user_data is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Usuario o contraseña no válidos"
+        )
+
+    is_authenticated = authenticate(user_data["password"], password)
+    if not is_authenticated:
+        raise HTTPException(
+            status_code=401,
+            detail="Usuario o contraseña no válidos"
+        )
+
+    token = create_token({"email": user_data['email']})
+    return RedirectResponse(
+        "/users/index",
+        status_code=302,
+        headers={
+            "Set-Cookie": f"access_token={token}; Max-Age={TOKEN_SECONDS_EXPIRATE}"
         }
+    )
+# Finish of login 
 
-        response = coleccion.insert_one(usuario)
+# Rederic to index for to users
 
-        return templates.TemplateResponse("succes.html", {"request": request})
-    else:
+@app.get("/users/index", response_class=HTMLResponse)
+async def index(request: Request, access_token: Union[str, None] = Cookie(None)):
+    if access_token is None:
+        return RedirectResponse("/", status_code=302)
+    try:
+        data_user = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
+        usuarios_collection = db['usuarios']
+        user_data = get_user(data_user["email"], usuarios_collection)
+        if user_data is None:
+            return RedirectResponse("/", status_code=302)
+    except JWTError:
+        return RedirectResponse("/", status_code=302)
+
+    # Pasa los datos del usuario a la plantilla
+    return templates.TemplateResponse("index.html", {"request": request, "user": user_data})
+
+@app.post("/users/logout")
+async def logout(request: Request):
+    try:
+        return RedirectResponse("/", status_code=302, headers={"Set-Cookie": "access_token=: Max-Age=0"})
+    except HTMLResponse:
         return templates.TemplateResponse("error.html", {"request": request})
 
 
-    
-@app.post("/submit_login")
-async def get_current_username(email: str = Form(...), password: str = Form(...)):
-    coleccion = db['usuarios']
-    
-    usuario = coleccion.find_one({"email": email})
-    if usuario is None:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
-    hash_password = usuario.get("password")
-    
-    if not pbkdf2_sha256.verify(password, hash_password):
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
-    
-    user_name = usuario.get("name")
-    img_filename = usuario.get("img_filename")
 
 
-    return RedirectResponse(url=f"/index?user={user_name}&img={img_filename}", status_code=303)
 
-@app.get("/index", response_class=HTMLResponse)
-async def index(request: Request, user: str = None, img: str = None):
-    if user:
-        user_name = user
-    else:
-        user_name = "Invitado"
-    
-    if img:
-        img_filename = img
-    else:
-        img_filename = "default.jpg"
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "user": user_name,
-        "img_filename": img_filename
-    })
-
-@app.get("/perfil", response_class=HTMLResponse)
-async def perfil(request: Request, user: str = None, img: str = None):
-    if user:
-        user_name = user
-    else:
-        user_name = "Invitado"
-    
-    if img:
-        img_filename = img
-    else:
-        img_filename = "default.jpg" 
-
-    return templates.TemplateResponse("perfil.html", {
-        "request": request,
-        "user": user_name,
-        "img_filename": img_filename
-    })

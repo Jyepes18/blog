@@ -1,4 +1,4 @@
-body{
+body {
     background-color: #f5f5dc;
 }
 
@@ -8,13 +8,23 @@ body{
     height: auto;         
     object-fit: contain;   
 }
+.a{
+    text-decoration: none;
+}
 
-.a-no-decoration{
+.a-no-decoration {
     text-decoration: none;
     color: #000;
 }
 
-.a-no-decoration:hover{
+.a-no-decoration:hover {
     color: #737a7c;
 }
 
+
+.card {
+    background-color: #f5f5dc; 
+    border: 1px solid #d3d3d3; 
+    border-radius: 8px; 
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); 
+}

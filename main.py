@@ -1,6 +1,6 @@
 from pymongo import MongoClient
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Cookie
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from passlib.hash import pbkdf2_sha256
@@ -10,6 +10,7 @@ from jose import jwt, JWTError
 from typing import Union
 from dotenv import load_dotenv
 import os
+from bson import ObjectId
 
 load_dotenv()
 
@@ -91,17 +92,11 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
 
     user_data = get_user(email, usuarios_collection)
     if user_data is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Usuario o contraseña no válidos"
-        )
+        return RedirectResponse("/notLogin", status_code=302)
 
     is_authenticated = authenticate(user_data["password"], password)
     if not is_authenticated:
-        raise HTTPException(
-            status_code=401,
-            detail="Usuario o contraseña no válidos"
-        )
+        return RedirectResponse("/notLogin", status_code=302)
 
     token = create_token({"email": user_data['email']})
     return RedirectResponse(
@@ -144,6 +139,7 @@ async def index(request: Request, access_token: Union[str, None] = Cookie(None))
         "posts": posts
     })
 
+# Exit aplication 
 
 @app.post("/users/logout")
 async def logout(request: Request):
@@ -151,6 +147,9 @@ async def logout(request: Request):
         return RedirectResponse("/", status_code=302, headers={"Set-Cookie": "access_token=: Max-Age=0"})
     except HTMLResponse:
         return templates.TemplateResponse("error.html", {"request": request})
+    
+###############
+
 # Create post
 @app.get("/users/post", response_class=HTMLResponse)
 async def get_post(request: Request):
@@ -185,3 +184,64 @@ async def create_post(request: Request,
         raise HTTPException(status_code=500, detail="Error al crear el post")
 
     return RedirectResponse("/users/index", status_code=302)
+#####
+
+@app.get("/users/porfol", response_class=HTMLResponse)
+async def get_porfol(request: Request, access_token: Union[str, None] = Cookie(None)):
+    if access_token is None:
+        return RedirectResponse("/", status_code=302)
+    try:
+        data_user = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
+        usuarios_collection = db["usuarios"]
+
+        user_data = get_user(data_user["email"], usuarios_collection)
+        if user_data is None:
+            return RedirectResponse("/", status_code=302)
+    except JWTError:
+        return RedirectResponse("/", status_code=302)
+    
+    post_collection = db["post"]
+    posts = list(post_collection.find({"user_id": data_user["email"]}))
+    
+    return templates.TemplateResponse("perfil.html", {"request" : request, "user" : user_data, "posts" : posts})
+
+
+#page 
+@app.get("/notLogin", response_class=HTMLResponse)
+async def not_login_succes(request: Request):
+    return templates.TemplateResponse("notLogin.html", {"request" : request})
+
+
+# buttons of porfol
+@app.post("/users/delete_post/{post_id}")
+async def delete_post_user(post_id: str, request: Request, access_token: Union[str, None] = Cookie(None)):
+    if access_token is None:
+        return RedirectResponse("/", status_code=302)
+
+    try:
+        data_user = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
+        usuarios_collection = db["usuarios"]
+
+        user_data = get_user(data_user["email"], usuarios_collection)
+        if user_data is None:
+            return {"error": "Usuario no encontrado"}
+
+    except JWTError:
+        return RedirectResponse("/", status_code=302)
+
+    form_data = await request.form()
+    method = form_data.get("_method")
+    
+    if method != "DELETE":
+        raise HTTPException(status_code=405, detail="Method Not Allowed")
+
+    post_collection = db["post"]
+
+    result = post_collection.delete_one({"_id": ObjectId(post_id), "user_id": data_user["email"]})
+
+    if result.deleted_count == 1:
+        return RedirectResponse("/users/porfol", status_code=302)
+    else:
+        return templates.TemplateResponse("error.html", {"request" : request})
+    
+

@@ -16,7 +16,7 @@
         <div class="container-lx">
             <nav class="navbar navbar-expand-lg">
                 <div class="container-fluid">
-                    <a class="navbar-brand" href="">
+                    <a class="navbar-brand" href="/users/porfol">
                         <img class="img" src="/static/images/{{ user.img_filename }}" alt="User Image">
                         <span>{{ user.name }}</span>
                     </a>
@@ -60,8 +60,8 @@
             <div class="row justify-content-center">
                 {% if posts %}
                     {% for post in posts %}
-                        <div class="col-md-4 mb-4"> <!-- Tres tarjetas por fila y separación -->
-                            <div class="card h-100"> <!-- Tarjeta con altura ajustable -->
+                        <div class="col-md-4 mb-4"> 
+                            <div class="card h-100">
                                 <div class="card-body">
                                     <div class="user-info mb-3">
                                         <span class="fw-bold">{{ post.user_name }}</span>

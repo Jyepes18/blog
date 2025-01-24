@@ -122,14 +122,28 @@ async def index(request: Request, access_token: Union[str, None] = Cookie(None))
     try:
         data_user = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
         usuarios_collection = db['usuarios']
+        
+
         user_data = get_user(data_user["email"], usuarios_collection)
         if user_data is None:
             return RedirectResponse("/", status_code=302)
     except JWTError:
         return RedirectResponse("/", status_code=302)
+    
+    posts_collection = db["post"]
+    posts = list(posts_collection.find())  
 
-    # Pasa los datos del usuario a la plantilla
-    return templates.TemplateResponse("index.html", {"request": request, "user": user_data})
+    for post in posts:
+        user = usuarios_collection.find_one({"email": post["user_id"]})
+        if user:
+            post["user_name"] = user.get("name", "Desconocido")
+    
+    return templates.TemplateResponse("index.html", {
+        "request": request, 
+        "user": user_data, 
+        "posts": posts
+    })
+
 
 @app.post("/users/logout")
 async def logout(request: Request):
@@ -137,9 +151,37 @@ async def logout(request: Request):
         return RedirectResponse("/", status_code=302, headers={"Set-Cookie": "access_token=: Max-Age=0"})
     except HTMLResponse:
         return templates.TemplateResponse("error.html", {"request": request})
+# Create post
+@app.get("/users/post", response_class=HTMLResponse)
+async def get_post(request: Request):
+    return templates.TemplateResponse("create.html", {"request" : request})
 
+@app.post("/users/post")
+async def create_post(request: Request, 
+                      title: str = Form(...), 
+                      description: str = Form(...), 
+                      access_token: Union[str, None] = Cookie(None)):
+    
+    if access_token is None:
+        return RedirectResponse("/", status_code=302)
+    try:
+        data_user = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
+        user_id = data_user["email"] 
+    except JWTError:
+        return RedirectResponse("/", status_code=302)
+    
+    coleccion = db["post"]
 
+    post = {
+        "user_id": user_id,
+        "title": title,
+        "description": description,
+        "created_at": datetime.utcnow().strftime("%Y-%m-%d")
+    }
 
+    result = coleccion.insert_one(post)
 
+    if not result.inserted_id:
+        raise HTTPException(status_code=500, detail="Error al crear el post")
 
-
+    return RedirectResponse("/users/index", status_code=302)

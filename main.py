@@ -224,7 +224,7 @@ async def delete_post_user(post_id: str, request: Request, access_token: Union[s
 
         user_data = get_user(data_user["email"], usuarios_collection)
         if user_data is None:
-            return {"error": "Usuario no encontrado"}
+            return RedirectResponse("/", status_code=302)
 
     except JWTError:
         return RedirectResponse("/", status_code=302)
@@ -233,7 +233,7 @@ async def delete_post_user(post_id: str, request: Request, access_token: Union[s
     method = form_data.get("_method")
     
     if method != "DELETE":
-        raise HTTPException(status_code=405, detail="Method Not Allowed")
+        return templates.TemplateResponse("error.html", {"request" : request})
 
     post_collection = db["post"]
 
@@ -244,4 +244,29 @@ async def delete_post_user(post_id: str, request: Request, access_token: Union[s
     else:
         return templates.TemplateResponse("error.html", {"request" : request})
     
+@app.post("/users/update_post/{post_id}")
+async def update_post(post_id: str, request: Request, 
+                      title: str = Form(...), 
+                      description: str = Form(...), 
+                      access_token: Union[str, None] = Cookie(None)):
+    if access_token is None:
+        return RedirectResponse("/", status_code=302)
+    
+    try:
+        data_user = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
+        user_id = data_user["email"]
+    except JWTError:
+        return RedirectResponse("/", status_code=302)
+    
+    post_collection = db["post"]
 
+
+    result = post_collection.update_one(
+        {"_id": ObjectId(post_id), "user_id": user_id},
+        {"$set": {"title": title, "description": description, "updated_at": datetime.utcnow().strftime("%Y-%m-%d")}}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Post no encontrado o no se modificó")
+    
+    return RedirectResponse("/users/porfol", status_code=302)

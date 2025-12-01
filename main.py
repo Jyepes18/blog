@@ -18,6 +18,7 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 TOKEN_SECONDS_EXPIRATE = int(os.getenv("TOKEN_SECONDS_EXPIRATE"))
 
+
 # Inicializar la aplicación FastAPI
 app = FastAPI()
 
